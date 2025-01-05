@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Гоночная игра</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black; /* Чёрный фон */
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #gameArea {
+            width: 400px;
+            height: 600px;
+            background: #333;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid #fff;
+        }
+        .car {
+            width: 50px;
+            height: 100px;
+            background: blue;
+            position: absolute;
+            bottom: 20px;
+            left: 175px;
+            border-radius: 5px;
+        }
+        .enemy {
+            width: 50px;
+            height: 100px;
+            background: red;
+            position: absolute;
+            top: -120px;
+            left: 0;
+            border-radius: 5px;
+        }
+        #score, #highScore {
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        #sideControls {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .control-button {
+            background: #555;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100px;
+        }
+        .control-button:hover {
+            background: #777;
+        }
+        #bottomControls {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        #volumeControl {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        #volumeControl input[type="range"] {
+            width: 100px;
+        }
+        #moveLeft, #moveRight {
+            width: 120px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameArea">
+        <div class="car" id="playerCar"></div>
+    </div>
+    <div id="sideControls">
+        <div id="score">Счёт: 0</div>
+        <div id="highScore">Лучший результат: 0</div>
+        <button class="control-button" id="pauseButton">⏸ Пауза</button>
+        <div id="volumeControl">
+            <span>Громкость:</span>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
+        </div>
+    </div>
+    <div id="bottomControls">
+        <button class="control-button" id="moveLeft">← Влево</button>
+        <button class="control-button" id="moveRight">→ Вправо</button>
+    </div>
+
+    <!-- Звуки -->
+    <audio id="moveSound" src="sounds/bmw_engine.mp3"></audio>
+    <audio id="enemySound" src="sounds/bmw_horn.mp3"></audio>
+    <audio id="crashSound" src="sounds/bmw_crash.mp3"></audio>
+
+    <script>
+        const gameArea = document.getElementById('gameArea');
+        const playerCar = document.getElementById('playerCar');
+        const scoreDisplay = document.getElementById('score');
+        const highScoreDisplay = document.getElementById('highScore');
+        const moveLeftButton = document.getElementById('moveLeft');
+        const moveRightButton = document.getElementById('moveRight');
+        const pauseButton = document.getElementById('pauseButton');
+        const volumeSlider = document.getElementById('volumeSlider');
+
+        const moveSound = document.getElementById('moveSound');
+        const enemySound = document.getElementById('enemySound');
+        const crashSound = document.getElementById('crashSound');
+
+        const gameWidth = gameArea.offsetWidth;
+        const carWidth = playerCar.offsetWidth;
+
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') || 0;
+        let playerX = gameWidth / 2 - carWidth / 2;
+        let enemies = [];
+        let gameInterval;
+        let isGamePaused = false;
+        let isGameOver = false;
+
+        // Установка громкости
+        const allSounds = [moveSound, enemySound, crashSound];
+        function updateVolume() {
+            const volume = volumeSlider.value;
+            allSounds.forEach(sound => sound.volume = volume);
+        }
+        volumeSlider.addEventListener('input', updateVolume);
+
+        // Пауза
+        pauseButton.addEventListener('click', () => {
+            if (isGamePaused) {
+                pauseButton.innerText = "⏸ Пауза";
+                isGamePaused = false;
+            } else {
+                pauseButton.innerText = "▶️ Продолжить";
+                isGamePaused = true;
+            }
+        });
+
+        // Управление машиной игрока
+        moveLeftButton.addEventListener('click', () => {
+            if (!isGamePaused && playerX > 0) {
+                playerX -= 10;
+                playerCar.style.left = playerX + 'px';
+                playSound(moveSound);
+            }
+        });
+
+        moveRightButton.addEventListener('click', () => {
+            if (!isGamePaused && playerX < gameWidth - carWidth) {
+                playerX += 10;
+                playerCar.style.left = playerX + 'px';
+                playSound(moveSound);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (!isGamePaused) {
+                if (e.key === 'ArrowLeft' && playerX > 0) {
+                    playerX -= 10;
+                    playSound(moveSound);
+                } else if (e.key === 'ArrowRight' && playerX < gameWidth - carWidth) {
+                    playerX += 10;
+                    playSound(moveSound);
+                }
+                playerCar.style.left = playerX + 'px';
+            }
+        });
+
+        function createEnemy() {
+            const enemy = document.createElement('div');
+            enemy.classList.add('enemy');
+            enemy.style.left = Math.random() * (gameWidth - carWidth) + 'px';
+            gameArea.appendChild(enemy);
+            enemies.push(enemy);
+            playSound(enemySound);
+        }
+
+        function moveEnemies() {
+            if (isGamePaused) return;
+
+            enemies.forEach((enemy, index) => {
+                const currentTop = parseInt(window.getComputedStyle(enemy).top);
+                enemy.style.top = currentTop + 5 + 'px';
+
+                if (currentTop > gameArea.offsetHeight) {
+                    enemy.remove();
+                    enemies.splice(index, 1);
+                    score += 1;
+                    scoreDisplay.innerText = `Счёт: ${score}`;
+                }
+
+                const playerRect = playerCar.getBoundingClientRect();
+                const enemyRect = enemy.getBoundingClientRect();
+                if (
+                    playerRect.left < enemyRect.right &&
+                    playerRect.right > enemyRect.left &&
+                    playerRect.top < enemyRect.bottom &&
+                    playerRect.bottom > enemyRect.top
+                ) {
+                    playSound(crashSound);
+                    endGame();
+                }
+            });
+        }
+
+        function endGame() {
+            clearInterval(gameInterval);
+            alert(`Игра окончена! Ваш счёт: ${score}`);
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+                highScoreDisplay.innerText = `Лучший результат: ${highScore}`;
+            }
+            isGameOver = true;
+            window.location.reload();
+        }
+
+        function startGame() {
+            gameInterval = setInterval(() => {
+                if (!isGamePaused && !isGameOver) {
+                    if (Math.random() < 0.03) createEnemy();
+                    moveEnemies();
+                }
+            }, 20);
+        }
+
+        function playSound(audioElement) {
+            audioElement.currentTime = 0;
+            audioElement.play();
+        }
+
+        highScoreDisplay.innerText = `Лучший результат: ${highScore}`;
+        startGame();
+    </script>
+</body>
+</html>
